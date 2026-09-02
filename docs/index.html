@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swedish Krona Exchange Rates</title>
+<meta name="description" content="Official Sveriges Riksbank mid exchange rates for 29 currencies against the Swedish krona, with history back to 1993.">
+<link rel="stylesheet" href="./vendor/uPlot.min.css">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1 data-i18n="title">Swedish Krona Exchange Rates</h1>
+      <p class="tagline" data-i18n="tagline"></p>
+    </div>
+    <button type="button" id="lang-toggle" data-i18n="langToggle"></button>
+  </header>
+
+  <p id="status" data-i18n="loading">Loading…</p>
+
+  <div id="content" hidden>
+
+    <div class="notice">
+      <span><strong data-i18n="observedOn"></strong>: <strong id="observed-date"></strong></span>
+      <span data-i18n="liveNotice"></span>
+    </div>
+
+    <section class="card">
+      <h2 data-i18n="converterTitle"></h2>
+      <div class="converter">
+        <div class="field">
+          <label for="amount" data-i18n="amount"></label>
+          <input type="number" id="amount" value="100" min="0" step="any" inputmode="decimal">
+        </div>
+        <div class="field">
+          <label for="from" data-i18n="from"></label>
+          <select id="from"></select>
+        </div>
+        <button type="button" id="swap" data-i18n-attr="title:swap" aria-label="Swap">⇄</button>
+        <div class="field">
+          <label for="to" data-i18n="to"></label>
+          <select id="to"></select>
+        </div>
+      </div>
+      <div class="result">
+        <div id="result">—</div>
+        <div id="rate-line"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 data-i18n="chartTitle"></h2>
+        <span id="chart-title-code"></span>
+        <div id="ranges"></div>
+      </div>
+      <div id="chart"></div>
+      <p id="gap-note" data-i18n="gapNote" hidden></p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 data-i18n="overviewTitle"></h2>
+        <input type="search" id="search" data-i18n-attr="placeholder:search">
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th data-sort="code" data-i18n="colCurrency"></th>
+              <th class="num" data-sort="value" data-i18n="colRate"></th>
+              <th class="num" data-sort="d1" data-i18n="col1d"></th>
+              <th class="num" data-sort="d7" data-i18n="col7d"></th>
+              <th class="num" data-sort="d30" data-i18n="col30d"></th>
+            </tr>
+          </thead>
+          <tbody id="rates-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <p>
+        <span data-i18n="footerSource"></span> ·
+        <span data-i18n="updatedAt"></span> <span id="fetched-at"></span>
+      </p>
+      <p data-i18n="footerLicense"></p>
+    </footer>
+
+  </div>
+</div>
+
+<script src="./vendor/uPlot.min.js"></script>
+<script src="./i18n.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

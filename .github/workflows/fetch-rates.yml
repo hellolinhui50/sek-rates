@@ -1,0 +1,49 @@
+name: Fetch exchange rates
+
+on:
+  schedule:
+    # Riksbank publishes around 16:15 local time. GitHub cron is UTC-only and
+    # Sweden switches between CET (UTC+1) and CEST (UTC+2), so run at both
+    # 15:30 and 14:30 UTC on weekdays. fetch-latest.ts is idempotent, so the
+    # second run of the day is a harmless no-op.
+    - cron: '30 14 * * 1-5'
+    - cron: '30 15 * * 1-5'
+  workflow_dispatch:
+
+# Never let two runs race for the same commit.
+concurrency:
+  group: fetch-rates
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 24 is the lowest LTS that runs .ts directly (native type stripping),
+          # which is why this project needs no build step or dependencies.
+          node-version: '24'
+
+      - name: Fetch latest rates
+        env:
+          # Optional: raises the API quota. The script works without it.
+          RIKSBANK_API_KEY: ${{ secrets.RIKSBANK_API_KEY }}
+        run: node scripts/fetch-latest.ts
+
+      - name: Commit if the data moved
+        run: |
+          if git diff --quiet -- data docs/data; then
+            echo "No new observations (weekend, holiday, or not yet published)."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data docs/data
+          git commit -m "data: rates for $(node -p "require('./data/latest.json').date")"
+          git push
