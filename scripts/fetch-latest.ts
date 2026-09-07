@@ -1,18 +1,32 @@
 /**
- * Daily incremental update. Deliberately costs exactly ONE API request:
- * `/Observations/Latest/ByGroup/130` returns every currency at once.
+ * Daily incremental update. In the normal case it costs exactly ONE API
+ * request: `/Observations/Latest/ByGroup/130` returns every currency at once.
  *
- * Appends anything new to data/history/<CODE>.json, then derives 1d/7d/30d
- * changes and writes data/latest.json. Idempotent: running it twice in a row
- * leaves the working tree untouched, which is what lets CI skip the commit on
- * weekends and Swedish bank holidays.
+ * But that endpoint only ever returns the *most recent* observation. If a run
+ * is missed — CI outage, failed cron, a paused repo — appending it blindly
+ * would step over the skipped bank days and leave a permanent hole in the
+ * history. So when a gap is detected the missing range is refetched per
+ * affected currency instead, at one request each. Weekends and Swedish bank
+ * holidays are not gaps, so the calendar decides rather than the raw date
+ * difference.
+ *
+ * Appends to data/history/<CODE>.json, then derives 1d/7d/30d changes and
+ * writes data/latest.json. Idempotent: running it twice in a row leaves the
+ * working tree untouched, which is what lets CI skip the commit when nothing
+ * was published.
  *
  *   node scripts/fetch-latest.ts
  */
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fetchLatestRates, type Currency } from './riksbank.ts';
+import {
+  bankDaysBetween,
+  fetchHistory,
+  fetchLatestRates,
+  nextDay,
+  type Currency,
+} from './riksbank.ts';
 import { DATA_DIR, HISTORY_DIR, writeJson, type HistoryPoint } from './paths.ts';
 
 interface Meta {
@@ -58,6 +72,31 @@ function change(current: number, past: number | null): number | null {
   return (current - past) / past;
 }
 
+/**
+ * Merge observations into a history, keyed by date. Later values win, so a
+ * figure the Riksbank has restated replaces the one already stored instead of
+ * producing a duplicate row.
+ */
+function mergeByDate(rows: HistoryPoint[], incoming: HistoryPoint[]): HistoryPoint[] {
+  const byDate = new Map(rows);
+  for (const [date, value] of incoming) byDate.set(date, value);
+  return [...byDate].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+/**
+ * Refetch [from, to] for one currency so skipped bank days are recovered.
+ * Costs one request; only called when the calendar proves days are missing.
+ */
+async function fillGap(
+  currency: Currency,
+  rows: HistoryPoint[],
+  from: string,
+  to: string,
+): Promise<HistoryPoint[]> {
+  const observations = await fetchHistory(currency.seriesId, from, to);
+  return mergeByDate(rows, observations.map((o) => [o.date, o.value] as HistoryPoint));
+}
+
 async function main() {
   const metaPath = join(DATA_DIR, 'meta.json');
   if (!existsSync(metaPath)) {
@@ -72,22 +111,49 @@ async function main() {
   const rates: Rate[] = [];
   let latestDate = '';
   let historyChanged = 0;
+  let gapsFilled = 0;
+
+  // One calendar lookup covering the widest span any currency could be behind,
+  // rather than one per currency.
+  const oldestStored = observations
+    .filter((o) => bySeriesId.has(o.seriesId))
+    .map((o) => readHistory(bySeriesId.get(o.seriesId)!.code).at(-1)?.[0])
+    .filter((d): d is string => Boolean(d))
+    .sort()[0];
+
+  const newestObserved = observations.reduce((max, o) => (o.date > max ? o.date : max), '');
+
+  const missedBankDays = oldestStored && newestObserved > nextDay(oldestStored)
+    ? await bankDaysBetween(nextDay(oldestStored), newestObserved)
+    : [];
 
   for (const obs of observations) {
     // Skips SEKETT and the retired pre-euro series, which are absent from meta.
     const currency = bySeriesId.get(obs.seriesId);
     if (!currency) continue;
 
-    const rows = readHistory(currency.code);
-    const last = rows[rows.length - 1];
+    let rows = readHistory(currency.code);
+    const last = rows.at(-1);
 
     if (!last || obs.date > last[0]) {
-      rows.push([obs.date, obs.value]);
+      // Bank days strictly between what we have and what we just got are days
+      // whose rates the "latest" endpoint cannot give us.
+      const skipped = last
+        ? missedBankDays.filter((d) => d > last[0] && d < obs.date)
+        : [];
+
+      if (skipped.length > 0) {
+        rows = await fillGap(currency, rows, nextDay(last![0]), obs.date);
+        console.log(`  ${currency.code}: filled ${skipped.length} missed bank day(s) ${skipped[0]}..${skipped.at(-1)}`);
+        gapsFilled++;
+      } else {
+        rows = mergeByDate(rows, [[obs.date, obs.value]]);
+      }
       writeJson(historyPath(currency.code), rows);
       historyChanged++;
     } else if (obs.date === last[0] && obs.value !== last[1]) {
       // Riksbank occasionally restates a same-day figure.
-      rows[rows.length - 1] = [obs.date, obs.value];
+      rows = mergeByDate(rows, [[obs.date, obs.value]]);
       writeJson(historyPath(currency.code), rows);
       historyChanged++;
     }
@@ -125,6 +191,7 @@ async function main() {
   console.log(`observation date : ${latestDate}`);
   console.log(`currencies       : ${rates.length}`);
   console.log(`history updated  : ${historyChanged}`);
+  console.log(`gaps backfilled  : ${gapsFilled}`);
   console.log(`result           : ${ratesChanged || historyChanged > 0 ? 'CHANGED' : 'no change'}`);
 }
 

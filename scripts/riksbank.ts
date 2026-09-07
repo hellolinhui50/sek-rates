@@ -167,12 +167,23 @@ export function fetchHistory(seriesId: string, from: string, to: string): Promis
   return request<Observation[]>(`/Observations/${seriesId.toLowerCase()}/${from}/${to}`);
 }
 
+/** The Swedish bank days in [from, to] — the days a rate is expected on. */
+export async function bankDaysBetween(from: string, to: string): Promise<string[]> {
+  if (from > to) return [];
+  const days = await request<{ calendarDate: string; swedishBankday: boolean }[]>(
+    `/CalendarDays/${from}/${to}`,
+  );
+  return days.filter((d) => d.swedishBankday).map((d) => d.calendarDate);
+}
+
 /** Whether a given date is a Swedish bank day (i.e. a rate is expected). */
 export async function isBankDay(date: string): Promise<boolean> {
-  const days = await request<{ calendarDate: string; swedishBankday: boolean }[]>(
-    `/CalendarDays/${date}/${date}`,
-  );
-  return days[0]?.swedishBankday ?? false;
+  return (await bankDaysBetween(date, date)).length > 0;
+}
+
+/** The day after `date`, as YYYY-MM-DD. */
+export function nextDay(date: string): string {
+  return isoDate(new Date(Date.parse(date) + 86_400_000));
 }
 
 // --- self test -------------------------------------------------------------

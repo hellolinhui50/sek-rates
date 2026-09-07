@@ -50,7 +50,7 @@ Requires Node 24+ (for native TypeScript execution). No dependencies, no build.
 ```bash
 node scripts/riksbank.ts --selftest   # list live currencies, sanity-check filters
 node scripts/backfill.ts              # one-off: full history for all currencies
-node scripts/fetch-latest.ts          # daily incremental (exactly 1 API request)
+node scripts/fetch-latest.ts          # daily incremental (1 API request, more when catching up)
 
 cd docs && python3 -m http.server 8000   # preview the page
 ```
@@ -71,6 +71,15 @@ and retries on 429 either way. A full backfill takes ~7 minutes anonymously.
 
 The workflow runs at 14:30 and 15:30 UTC on weekdays (Sweden shifts between CET
 and CEST, so it tries both) and commits only when the data actually moved.
+
+### Missed runs heal themselves
+
+`/Observations/Latest/ByGroup/130` returns only the *most recent* observation, so
+a missed run (CI outage, failed cron) would otherwise step over the skipped days
+and leave a permanent hole. `fetch-latest.ts` compares what is stored against the
+Swedish bank-day calendar and refetches the missing range per affected currency
+when — and only when — days are actually absent. Weekends and bank holidays are
+not gaps.
 
 ## Known data quirks
 
