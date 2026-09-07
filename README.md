@@ -1,7 +1,6 @@
 # sek-rates
 
 **Live site / 在线网站:** https://hellolinhui50.github.io/sek-rates/
-**Repository / 项目仓库:** https://github.com/hellolinhui50/sek-rates
 
 Official Sveriges Riksbank exchange rates for the Swedish krona — 29 currencies,
 history back to 1993 — fetched daily by GitHub Actions and served as a static page.
